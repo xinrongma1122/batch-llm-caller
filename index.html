@@ -64,6 +64,7 @@
 
     textarea,
     input[type="text"],
+    input[type="password"],
     input[type="file"] {
       width: 100%;
       border: 1px solid var(--border);
@@ -74,7 +75,8 @@
     }
 
     textarea,
-    input[type="text"] {
+    input[type="text"],
+    input[type="password"] {
       padding: 11px 12px;
     }
 
@@ -89,6 +91,7 @@
 
     textarea:focus,
     input[type="text"]:focus,
+    input[type="password"]:focus,
     input[type="file"]:focus {
       border-color: var(--accent);
       outline: 3px solid rgba(20, 108, 96, 0.16);
@@ -213,8 +216,18 @@
       </div>
 
       <div class="field">
+        <label for="apiUrl">API URL</label>
+        <input id="apiUrl" type="text" value="http://localhost:1234/v1/chat/completions">
+      </div>
+
+      <div class="field">
+        <label for="apiKey">API Key</label>
+        <input id="apiKey" type="password">
+      </div>
+
+      <div class="field">
         <label for="modelName">Model name</label>
-        <input id="modelName" type="text" value="qwen3.5-0.8b">
+        <input id="modelName" type="text" value="qwen3.5-0.8b" placeholder="qwen3.5-0.8b (LM Studio), gemini-2.5-flash (Google AI Studio), meta-llama/llama-3.3-70b-instruct:free (OpenRouter)">
       </div>
 
       <div class="actions">
@@ -228,12 +241,10 @@
   </main>
 
   <script>
-    const apiUrls = [
-      "http://localhost:1234/v1/chat/completions",
-      "http://127.0.0.1:1234/v1/chat/completions"
-    ];
     const systemPromptEl = document.getElementById("systemPrompt");
     const promptFileEl = document.getElementById("promptFile");
+    const apiUrlEl = document.getElementById("apiUrl");
+    const apiKeyEl = document.getElementById("apiKey");
     const modelNameEl = document.getElementById("modelName");
     const runButton = document.getElementById("runButton");
     const downloadButton = document.getElementById("downloadButton");
@@ -374,12 +385,18 @@
       resultsEl.appendChild(item);
     }
 
-    async function postChatCompletion(url, model, systemPrompt, input) {
+    async function postChatCompletion(url, apiKey, model, systemPrompt, input) {
+      const headers = {
+        "Content-Type": "application/json"
+      };
+
+      if (apiKey) {
+        headers.Authorization = `Bearer ${apiKey}`;
+      }
+
       return fetch(url, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
+        headers,
         body: JSON.stringify({
           model,
           temperature: 0,
@@ -391,25 +408,8 @@
       });
     }
 
-    async function callLmStudio(model, systemPrompt, input) {
-      let lastNetworkError = null;
-      let response = null;
-
-      for (const url of apiUrls) {
-        try {
-          response = await postChatCompletion(url, model, systemPrompt, input);
-          break;
-        } catch (error) {
-          lastNetworkError = error;
-        }
-      }
-
-      if (!response) {
-        const message = lastNetworkError && lastNetworkError.message
-          ? lastNetworkError.message
-          : "Could not connect to LM Studio.";
-        throw new Error(`Could not reach LM Studio at localhost:1234 or 127.0.0.1:1234. ${message}`);
-      }
+    async function callLmStudio(apiUrl, apiKey, model, systemPrompt, input) {
+      const response = await postChatCompletion(apiUrl, apiKey, model, systemPrompt, input);
 
       const bodyText = await response.text();
       let data = null;
@@ -468,12 +468,19 @@
 
     async function runBatch() {
       const file = promptFileEl.files[0];
+      const apiUrl = apiUrlEl.value.trim();
+      const apiKey = apiKeyEl.value.trim();
       const model = modelNameEl.value.trim();
       const systemPrompt = systemPromptEl.value;
 
       batchResults = [];
       resultsEl.textContent = "";
       downloadButton.style.display = "none";
+
+      if (!apiUrl) {
+        setStatus("Enter an API URL.", true);
+        return;
+      }
 
       if (!model) {
         setStatus("Enter a model name.", true);
@@ -482,6 +489,9 @@
 
       runButton.disabled = true;
       promptFileEl.disabled = true;
+      apiUrlEl.disabled = true;
+      apiKeyEl.disabled = true;
+      modelNameEl.disabled = true;
       downloadButton.disabled = true;
 
       try {
@@ -501,7 +511,7 @@
           setStatus(`Processing row ${rowNumber} of ${lines.length}...`);
 
           try {
-            responseText = await callLmStudio(model, systemPrompt, input);
+            responseText = await callLmStudio(apiUrl, apiKey, model, systemPrompt, input);
           } catch (error) {
             responseText = error && error.message ? `Error: ${error.message}` : "Error: Request failed.";
           }
@@ -524,6 +534,9 @@
       } finally {
         runButton.disabled = false;
         promptFileEl.disabled = false;
+        apiUrlEl.disabled = false;
+        apiKeyEl.disabled = false;
+        modelNameEl.disabled = false;
       }
     }
 
